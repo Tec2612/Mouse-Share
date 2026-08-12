@@ -1,10 +1,9 @@
-mod identity;
 mod input;
-mod network;
 
 use anyhow::{Context, Result};
 use ms_config::{ConfigStore, SecureStorage};
 use ms_core_service::CoreService;
+use ms_daemon::{identity, network};
 use ms_discovery::{translate_event, DiscoveryEvent, DiscoveryService, RemoteOs};
 use ms_input_core::Event as CoreEvent;
 use ms_protocol::OperatingSystem;

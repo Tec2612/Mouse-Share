@@ -12,6 +12,16 @@ members = [
     "crates/ms-core-service",
     "crates/ms-daemon",
 ]
+exclude = [
+    # The Tauri UI backend has its own dependency graph (tauri, wry, tao)
+    # with platform-native UI toolkit requirements (webkit2gtk on Linux,
+    # WebView2 on Windows, WKWebView on macOS) that don't belong in the
+    # headless core's workspace — keeping it excluded means
+    # `cargo build/test --workspace` at the repo root always succeeds
+    # without needing a UI toolkit installed, on any host. Build/check it
+    # directly from app/src-tauri instead (see docs/build-instructions.md).
+    "app/src-tauri",
+]
 
 [workspace.package]
 version = "0.1.0"

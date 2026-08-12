@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mouse Share</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <nav class="sidebar">
+      <div class="brand">Mouse Share</div>
+      <button class="nav-item active" data-tab="dashboard">Dashboard</button>
+      <button class="nav-item" data-tab="setup">Computer Setup</button>
+      <button class="nav-item" data-tab="settings">Settings</button>
+      <div class="sidebar-footer">
+        <span id="this-device-fingerprint" class="fingerprint" title="This device's certificate fingerprint"></span>
+      </div>
+    </nav>
+
+    <main class="content">
+      <!-- Dashboard -->
+      <section id="tab-dashboard" class="tab active">
+        <h1>Dashboard</h1>
+
+        <div class="card">
+          <h2>This Computer</h2>
+          <p id="this-device-name">—</p>
+          <p class="muted">Sharing status: <span id="sharing-status">Idle</span></p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Paired Computers</h2>
+          </div>
+          <table class="table" id="paired-devices-table">
+            <thead><tr><th>Name</th><th>Fingerprint</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p class="muted empty-state" id="paired-empty">No paired computers yet. Go to Computer Setup to add one.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Discovered on your network</h2>
+            <button id="refresh-discovery" class="btn secondary">Refresh</button>
+          </div>
+          <table class="table" id="discovered-devices-table">
+            <thead><tr><th>Name</th><th>OS</th><th>Address</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p class="muted empty-state" id="discovery-empty">Searching…</p>
+        </div>
+      </section>
+
+      <!-- Computer Setup -->
+      <section id="tab-setup" class="tab">
+        <h1>Computer Setup</h1>
+
+        <div class="card">
+          <h2>Connect by IP/Hostname</h2>
+          <p class="muted">Use this if a computer doesn't appear automatically (common on networks with client isolation).</p>
+          <div class="form-row">
+            <input id="manual-host" type="text" placeholder="192.168.1.42 or bobs-mac.local" />
+            <input id="manual-port" type="number" placeholder="45677" value="45677" style="width:7rem" />
+            <input id="manual-name" type="text" placeholder="Display name" />
+            <button id="manual-connect-btn" class="btn primary">Pair</button>
+          </div>
+        </div>
+
+        <div class="card" id="pairing-card" hidden>
+          <h2>Confirm pairing</h2>
+          <p>Compare this code with the one shown on <strong id="pairing-remote-name"></strong>'s screen. Only confirm if they match exactly.</p>
+          <div class="sas-code" id="pairing-sas">------</div>
+          <div class="form-row">
+            <button id="pairing-confirm-btn" class="btn primary">Codes match — Confirm</button>
+            <button id="pairing-cancel-btn" class="btn secondary">Cancel</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Screen Layout</h2>
+          <p class="muted">Arrange how your paired computers connect. (Drag-and-drop layout editor — canvas positions and edge links are persisted via <code>ScreenLayout</code>; this minimal build lists the current edge links as text pending the full drag-and-drop canvas.)</p>
+          <div id="layout-summary" class="muted">Loading…</div>
+        </div>
+      </section>
+
+      <!-- Settings -->
+      <section id="tab-settings" class="tab">
+        <h1>Settings</h1>
+
+        <div class="card">
+          <label class="toggle-row">
+            <input type="checkbox" id="setting-start-on-boot" />
+            <span>Start on startup</span>
+          </label>
+          <label class="toggle-row">
+            <input type="checkbox" id="setting-auto-discovery" />
+            <span>Auto-discovery (mDNS)</span>
+          </label>
+          <label class="toggle-row">
+            <input type="checkbox" id="setting-clipboard" />
+            <span>Clipboard sharing</span>
+          </label>
+        </div>
+
+        <div class="card">
+          <h2>Emergency hotkey</h2>
+          <p class="muted" id="emergency-hotkey-display">Ctrl + Alt + Escape</p>
+          <p class="muted">Always returns local control immediately, regardless of network state.</p>
+        </div>
+
+        <div class="card">
+          <h2>macOS Permissions</h2>
+          <div class="permission-row">
+            <span>Accessibility</span>
+            <span id="perm-accessibility" class="badge">checking…</span>
+            <button id="grant-accessibility-btn" class="btn secondary">Grant</button>
+          </div>
+          <div class="permission-row">
+            <span>Input Monitoring</span>
+            <span id="perm-input-monitoring" class="badge">checking…</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <button id="save-settings-btn" class="btn primary">Save Settings</button>
+          <span id="settings-saved-msg" class="muted" hidden>Saved.</span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>
