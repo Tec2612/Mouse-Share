@@ -18,6 +18,7 @@ pub fn run() {
             app.manage(app_state);
             setup_tray(app.handle())?;
             pairing::spawn_pairing_acceptor(app.handle().clone());
+            spawn_daemon_if_present();
 
             // Closing the window must not exit the app: the pairing
             // acceptor (and, once wired, live sessions) need to keep
@@ -41,10 +42,13 @@ pub fn run() {
             commands::save_settings,
             commands::get_layout,
             commands::save_layout,
+            commands::link_layout_edge,
+            commands::unlink_layout_edge,
             commands::get_config,
             commands::list_paired_devices,
             commands::remove_paired_device,
             commands::get_this_device_fingerprint,
+            commands::get_this_device_id,
             commands::discover_devices,
             commands::start_pairing,
             commands::confirm_pairing,
@@ -58,11 +62,17 @@ pub fn run() {
         .expect("error while running the Mouse Share UI");
 }
 
-fn build_app_state(app: &tauri::AppHandle) -> anyhow::Result<AppState> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| anyhow::anyhow!("could not resolve app config dir: {e}"))?;
+fn build_app_state(_app: &tauri::AppHandle) -> anyhow::Result<AppState> {
+    // Deliberately NOT Tauri's own `app.path().app_config_dir()`: the
+    // headless daemon (`ms-daemon`, a separate process — see
+    // docs/architecture.md) has no Tauri context and resolves its config
+    // directory via `ms_config::ConfigStore::default_path()` instead. The
+    // two must agree, or the daemon never sees devices paired through
+    // this UI (and vice versa) — they were pointing at two different
+    // directories entirely until this fix.
+    let config_dir = ms_config::ConfigStore::default_path()
+        .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+        .ok_or_else(|| anyhow::anyhow!("could not resolve a config directory for this platform"))?;
     std::fs::create_dir_all(&config_dir)?;
 
     let config_store = ConfigStore::new(config_dir.join("config.toml"));
@@ -121,6 +131,41 @@ fn start_advertising(device_id: uuid::Uuid, device_name: &str, pairing_port: u16
     let host_label = device_name.to_lowercase().replace(' ', "-");
     discovery.advertise(device_id, device_name, remote_os, &host_label, pairing_port)?;
     Ok(discovery)
+}
+
+/// Launches `mouse-share-daemon` (the actual input-capture/session
+/// binary — see `docs/architecture.md`) as a detached background
+/// process, if it's sitting next to this UI executable (as both the
+/// Windows Inno Setup installer and the macOS `.dmg` bundle it — see
+/// `installers/`). Without this, nothing ever starts the daemon at all:
+/// pairing would work (it's handled directly by this UI process) but no
+/// mouse/keyboard input would ever actually cross between machines.
+///
+/// If a daemon is already running (from a previous launch, or a user
+/// running it manually), this spawn just fails fast on the port bind and
+/// exits — harmless, and not worth a proper singleton check for now.
+fn spawn_daemon_if_present() {
+    let Ok(current_exe) = std::env::current_exe() else {
+        tracing::warn!("could not resolve this executable's own path; not starting the daemon");
+        return;
+    };
+    let Some(dir) = current_exe.parent() else { return };
+
+    #[cfg(target_os = "windows")]
+    let daemon_name = "mouse-share-daemon.exe";
+    #[cfg(not(target_os = "windows"))]
+    let daemon_name = "mouse-share-daemon";
+
+    let daemon_path = dir.join(daemon_name);
+    if !daemon_path.exists() {
+        tracing::info!(?daemon_path, "daemon binary not found next to the UI executable; not starting it (expected during `tauri dev`)");
+        return;
+    }
+
+    match std::process::Command::new(&daemon_path).spawn() {
+        Ok(child) => tracing::info!(pid = child.id(), ?daemon_path, "started background daemon"),
+        Err(e) => tracing::error!(error = %e, ?daemon_path, "failed to start background daemon"),
+    }
 }
 
 fn current_os() -> ms_protocol::OperatingSystem {

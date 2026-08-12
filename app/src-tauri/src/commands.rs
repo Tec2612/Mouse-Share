@@ -35,6 +35,25 @@ pub fn save_layout(state: State<AppState>, layout: ScreenLayout) -> Result<(), S
     state.config_store.save(&config).map_err(to_err)
 }
 
+/// Links this device's `my_edge` to `peer_device_id`'s opposite edge
+/// (mirrored — see `ScreenLayout::link_edges`), the interim substitute
+/// for a drag-and-drop layout canvas (not yet built — see `app/README.md`).
+/// Both devices must already be registered as layout nodes, which
+/// `commit_pairing` does automatically for every paired device.
+#[tauri::command]
+pub fn link_layout_edge(state: State<AppState>, peer_device_id: uuid::Uuid, my_edge: ms_protocol::ScreenEdge) -> Result<(), String> {
+    let mut config = state.config_store.load().map_err(to_err)?;
+    config.layout.link_edges(state.device_id, my_edge, peer_device_id).map_err(to_err)?;
+    state.config_store.save(&config).map_err(to_err)
+}
+
+#[tauri::command]
+pub fn unlink_layout_edge(state: State<AppState>, my_edge: ms_protocol::ScreenEdge) -> Result<(), String> {
+    let mut config = state.config_store.load().map_err(to_err)?;
+    config.layout.unlink_edge(state.device_id, my_edge);
+    state.config_store.save(&config).map_err(to_err)
+}
+
 #[tauri::command]
 pub fn get_config(state: State<AppState>) -> Result<ConfigFile, String> {
     state.config_store.load().map_err(to_err)
@@ -66,6 +85,11 @@ pub fn remove_paired_device(state: State<AppState>, fingerprint: String) -> Resu
 #[tauri::command]
 pub fn get_this_device_fingerprint(state: State<AppState>) -> String {
     state.device_identity.fingerprint()
+}
+
+#[tauri::command]
+pub fn get_this_device_id(state: State<AppState>) -> uuid::Uuid {
+    state.device_id
 }
 
 #[derive(Serialize)]
@@ -167,23 +191,54 @@ pub async fn start_pairing(state: State<'_, AppState>, addr: String, port: u16, 
     Ok(PairingStarted { sas, remote_name: peer_hello.device_name })
 }
 
-/// Commits the pairing started by `start_pairing` once the user has
-/// visually confirmed the SAS matches what the other device displayed.
-#[tauri::command]
-pub fn confirm_pairing(state: State<AppState>) -> Result<(), String> {
-    let pending = state.pending_pairing.lock().expect("poisoned").take().ok_or("no pairing in progress")?;
-
-    let mut store = identity_trust_store(&state)?;
+/// Adds `pending` to the trust store *and* registers both ends as
+/// `ScreenLayout` nodes (creating placeholder canvas positions if they're
+/// not already present) so a freshly-paired device immediately shows up
+/// in Computer Setup's layout editor instead of only being pairable but
+/// invisible to layout linking. Shared by both pairing directions (dialed
+/// out vs. accepted incoming) since the bookkeeping is identical either
+/// way.
+fn commit_pairing(state: &State<AppState>, pending: PendingPairing) -> Result<(), String> {
+    let mut store = identity_trust_store(state)?;
     store.add(PairedDevice {
         device_id: pending.remote_device_id,
-        name: pending.remote_name,
+        name: pending.remote_name.clone(),
         fingerprint: pending.remote_fingerprint,
         paired_at_unix_ms: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0),
     });
-    ms_daemon::identity::save_trust_store(&state.trust_store_path, &store).map_err(to_err)
+    ms_daemon::identity::save_trust_store(&state.trust_store_path, &store).map_err(to_err)?;
+
+    let mut config = state.config_store.load().map_err(to_err)?;
+    if !config.layout.nodes().any(|n| n.device_id == state.device_id) {
+        config.layout.add_device(ms_config::ComputerNode {
+            device_id: state.device_id,
+            display_name: state.device_name.clone(),
+            enabled: true,
+            canvas_x: 100.0,
+            canvas_y: 150.0,
+        });
+    }
+    if !config.layout.nodes().any(|n| n.device_id == pending.remote_device_id) {
+        config.layout.add_device(ms_config::ComputerNode {
+            device_id: pending.remote_device_id,
+            display_name: pending.remote_name,
+            enabled: true,
+            canvas_x: 350.0,
+            canvas_y: 150.0,
+        });
+    }
+    state.config_store.save(&config).map_err(to_err)
+}
+
+/// Commits the pairing started by `start_pairing` once the user has
+/// visually confirmed the SAS matches what the other device displayed.
+#[tauri::command]
+pub fn confirm_pairing(state: State<AppState>) -> Result<(), String> {
+    let pending = state.pending_pairing.lock().expect("poisoned").take().ok_or("no pairing in progress")?;
+    commit_pairing(&state, pending)
 }
 
 #[tauri::command]
@@ -198,18 +253,7 @@ pub fn cancel_pairing(state: State<AppState>) {
 #[tauri::command]
 pub fn accept_incoming_pairing(state: State<AppState>) -> Result<(), String> {
     let pending = state.incoming_pairing.lock().expect("poisoned").take().ok_or("no incoming pairing in progress")?;
-
-    let mut store = identity_trust_store(&state)?;
-    store.add(PairedDevice {
-        device_id: pending.remote_device_id,
-        name: pending.remote_name,
-        fingerprint: pending.remote_fingerprint,
-        paired_at_unix_ms: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0),
-    });
-    ms_daemon::identity::save_trust_store(&state.trust_store_path, &store).map_err(to_err)
+    commit_pairing(&state, pending)
 }
 
 #[tauri::command]

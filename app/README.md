@@ -24,16 +24,30 @@ icon, and macOS Accessibility/Input Monitoring onboarding.
   pairing works, not just manual IP/hostname. Closing the main window
   hides it rather than quitting, so the pairing acceptor (and the tray)
   keep running in the background like a normal tray app.
+- **Live sharing**: the UI now launches `mouse-share-daemon` (the
+  headless capture/injection/session binary) as a background process on
+  startup if it's present next to the UI executable (`spawn_daemon_if_present`
+  in `lib.rs`) — previously nothing started it at all. The daemon also now
+  actively dials every paired device it discovers over mDNS (a
+  "mesh-connect" loop in `ms-daemon/src/main.rs`), rather than only ever
+  accepting inbound connections, which is what actually turns "paired"
+  into "reachable for control." A fix earlier in this same effort also
+  aligned the UI's and daemon's config-directory resolution — they
+  previously used two different directories and never saw each other's
+  trust store or layout at all.
+- **Screen layout**: pairing now auto-registers both devices as
+  `ScreenLayout` nodes, and Computer Setup's Screen Layout card has a
+  simple "my edge ↔ paired device" linking form (`link_layout_edge`/
+  `unlink_layout_edge`) as an interim substitute for a drag-and-drop
+  canvas, which isn't built yet. The layout data model and persistence
+  are complete in `ms-config`; only the visual canvas editor is still a
+  form instead of a canvas.
 - **Not yet wired**: the tray's "Stop Sharing" action, the drag-and-drop
-  screen-layout canvas (the layout data model and its persistence are
-  complete in `ms-config`; only the visual canvas editor is still a text
-  summary — see `index.html`'s comment in the Screen Layout card), and
-  actually starting/relaying a *live* shared-control session after
-  pairing (that's `ms-daemon`'s `listen_port` listener, which today only
-  runs in the separate headless binary — nothing yet launches
-  `mouse-share-daemon` automatically alongside the UI). A production
-  build should also replace the placeholder solid-color icons in
-  `src-tauri/icons/` with real artwork.
+  canvas itself, and a proper daemon singleton check (spawning the UI
+  twice currently spawns two daemon attempts; the second harmlessly fails
+  to bind the session port and exits). A production build should also
+  replace the placeholder solid-color icons in `src-tauri/icons/` with
+  real artwork.
 - **Build validation**: this repository's own sandbox has no system
   WebView toolkit available (Linux's webkit2gtk packages were unavailable
   from the configured package mirror during development — see

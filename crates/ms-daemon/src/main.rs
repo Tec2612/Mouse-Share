@@ -4,12 +4,14 @@ use anyhow::{Context, Result};
 use ms_config::{ConfigStore, SecureStorage};
 use ms_core_service::CoreService;
 use ms_daemon::{identity, network};
-use ms_discovery::{translate_event, DiscoveryEvent, DiscoveryService, RemoteOs};
+use ms_discovery::{translate_event, DiscoveryEvent, DiscoveryService};
 use ms_input_core::Event as CoreEvent;
 use ms_protocol::OperatingSystem;
 use network::ChannelNetworkSender;
+use std::collections::HashMap;
+use std::net::IpAddr;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[tokio::main]
@@ -42,7 +44,6 @@ async fn main() -> Result<()> {
             .context("building TLS configuration")?;
     let tls_acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config));
     let tls_connector = tokio_rustls::TlsConnector::from(Arc::new(tls_client_config));
-    let _ = tls_connector; // used by connect_out when initiating outbound pairing/reconnects
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", config.settings.network.listen_port))
         .await
@@ -62,9 +63,43 @@ async fn main() -> Result<()> {
         Duration::from_millis(config.settings.network.heartbeat_interval_ms),
     ));
 
+    // Reloads the on-disk trust store into the same Arc<Mutex<..>> the
+    // listener's/dialer's PinnedVerifier already holds, so a pairing
+    // completed later through the UI (a separate process — see
+    // docs/architecture.md) takes effect here without a restart.
+    tokio::spawn(reload_trust_store_loop(trust_store_path.clone(), trust_store.clone()));
+
+    // Discovered peer addresses, keyed by device_id, kept fresh by
+    // spawn_discovery below and consumed by the mesh-connect loop.
+    let discovered_addrs: Arc<Mutex<HashMap<uuid::Uuid, IpAddr>>> = Arc::new(Mutex::new(HashMap::new()));
+
     if config.settings.network.auto_discovery_enabled {
-        spawn_discovery(device_id, device_name.clone(), local_os, config.settings.network.listen_port)?;
+        // Browse only — this device is already advertised (at
+        // NetworkSettings::pairing_port) by the desktop UI process if
+        // it's running; a second simultaneous advertisement for the same
+        // identity from this process would just be redundant and risks
+        // an mDNS name-conflict probe. See NetworkSettings::pairing_port's
+        // doc comment.
+        spawn_discovery_browse(discovered_addrs.clone())?;
     }
+
+    // Dials every paired (trust-store) device this daemon has a
+    // discovered address for and doesn't already have a live session
+    // with. This is what turns "paired" into "actually reachable for
+    // control" — without it, two daemons that only ever accept
+    // connections never actually connect to each other.
+    tokio::spawn(mesh_connect_loop(
+        trust_store_path,
+        discovered_addrs,
+        device_id,
+        device_name.clone(),
+        local_os,
+        config.settings.network.listen_port,
+        tls_connector,
+        network_sender.clone(),
+        event_tx.clone(),
+        Duration::from_millis(config.settings.network.heartbeat_interval_ms),
+    ));
 
     match input::build_platform_input() {
         Ok((capture, injector)) => {
@@ -103,6 +138,76 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+async fn reload_trust_store_loop(path: std::path::PathBuf, shared: Arc<std::sync::Mutex<ms_security::TrustStore>>) {
+    let mut ticker = tokio::time::interval(Duration::from_secs(5));
+    loop {
+        ticker.tick().await;
+        match identity::load_trust_store(&path) {
+            Ok(fresh) => *shared.lock().expect("poisoned") = fresh,
+            Err(e) => tracing::debug!(error = %e, "failed to reload trust store; keeping previous contents"),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn mesh_connect_loop(
+    trust_store_path: std::path::PathBuf,
+    discovered_addrs: Arc<Mutex<HashMap<uuid::Uuid, IpAddr>>>,
+    device_id: uuid::Uuid,
+    device_name: String,
+    os: OperatingSystem,
+    session_port: u16,
+    tls_connector: tokio_rustls::TlsConnector,
+    network_sender: Arc<ChannelNetworkSender>,
+    event_tx: tokio::sync::mpsc::UnboundedSender<CoreEvent>,
+    heartbeat_interval: Duration,
+) {
+    let mut ticker = tokio::time::interval(Duration::from_secs(5));
+    loop {
+        ticker.tick().await;
+
+        let trust_store = match identity::load_trust_store(&trust_store_path) {
+            Ok(store) => store,
+            Err(e) => {
+                tracing::debug!(error = %e, "mesh-connect: failed to read trust store");
+                continue;
+            }
+        };
+
+        let targets: Vec<(uuid::Uuid, IpAddr)> = {
+            let addrs = discovered_addrs.lock().expect("poisoned");
+            trust_store
+                .list()
+                .filter(|peer| !network_sender.is_connected(peer.device_id))
+                .filter_map(|peer| addrs.get(&peer.device_id).map(|ip| (peer.device_id, *ip)))
+                .collect()
+        };
+
+        for (peer_id, ip) in targets {
+            let addr = std::net::SocketAddr::new(ip, session_port);
+            let hello = ms_protocol::Hello {
+                protocol_version: ms_protocol::PROTOCOL_VERSION,
+                device_id,
+                device_name: device_name.clone(),
+                os,
+                session_id: uuid::Uuid::new_v4(),
+            };
+            let server_name = rustls::pki_types::ServerName::from(ip);
+            let connector = tls_connector.clone();
+            let network_sender = network_sender.clone();
+            let event_tx = event_tx.clone();
+            tokio::spawn(async move {
+                tracing::info!(peer = %peer_id, %addr, "mesh-connect: dialing paired device");
+                if let Err(e) =
+                    network::connect_out(addr, connector, server_name, hello, network_sender, event_tx, heartbeat_interval).await
+                {
+                    tracing::debug!(peer = %peer_id, error = %e, "mesh-connect: dial failed; will retry");
+                }
+            });
+        }
+    }
+}
+
 fn platform_secure_storage() -> Box<dyn SecureStorage> {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
@@ -132,27 +237,28 @@ fn current_os() -> OperatingSystem {
     }
 }
 
-fn spawn_discovery(device_id: uuid::Uuid, device_name: String, os: OperatingSystem, port: u16) -> Result<()> {
-    let mut discovery = DiscoveryService::new().context("starting mDNS discovery")?;
-    let remote_os = match os {
-        OperatingSystem::Windows => RemoteOs::Windows,
-        OperatingSystem::MacOs => RemoteOs::MacOs,
-    };
-    let host_label = device_name.to_lowercase().replace(' ', "-");
-    discovery
-        .advertise(device_id, &device_name, remote_os, &host_label, port)
-        .context("advertising this device over mDNS")?;
-
+/// Browses for peer devices (advertised by the desktop UI process — see
+/// `NetworkSettings::pairing_port`'s doc comment) and keeps
+/// `discovered_addrs` current. Does not advertise this device itself.
+fn spawn_discovery_browse(discovered_addrs: Arc<Mutex<HashMap<uuid::Uuid, IpAddr>>>) -> Result<()> {
+    let discovery = DiscoveryService::new().context("starting mDNS discovery")?;
     let receiver = discovery.browse().context("browsing for peer devices")?;
     tokio::task::spawn_blocking(move || {
-        let _discovery = discovery; // keep the daemon (and its advertisement) alive
+        let _discovery = discovery; // keep the browser alive
         while let Ok(event) = receiver.recv() {
             match translate_event(event) {
                 Some(Ok(DiscoveryEvent::Found(ann))) => {
-                    tracing::info!(name = %ann.name, os = ?ann.os, addrs = ?ann.addrs, port = ann.port, "discovered device");
+                    if let Some(ip) = ann.addrs.first() {
+                        tracing::info!(name = %ann.name, os = ?ann.os, %ip, "discovered device");
+                        discovered_addrs.lock().expect("poisoned").insert(ann.device_id, *ip);
+                    }
                 }
                 Some(Ok(DiscoveryEvent::Lost { fullname })) => {
                     tracing::info!(%fullname, "device no longer visible");
+                    // Deliberately not removed from discovered_addrs: a
+                    // brief mDNS flap shouldn't drop a reachable address
+                    // the mesh-connect loop could otherwise still reach;
+                    // a stale address just fails to connect next tick.
                 }
                 Some(Err(e)) => tracing::debug!(error = %e, "ignoring malformed discovery record"),
                 None => {}
