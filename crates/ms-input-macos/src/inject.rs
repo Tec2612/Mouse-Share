@@ -115,4 +115,9 @@ impl InputInjector for MacOsInputInjector {
         let point = event.location();
         Ok((point.x, point.y))
     }
+
+    fn screen_bounds(&self) -> Result<(f64, f64, f64, f64), InjectError> {
+        let b = crate::screen::virtual_screen_bounds();
+        Ok((b.x, b.y, b.width, b.height))
+    }
 }

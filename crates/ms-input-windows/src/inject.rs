@@ -156,6 +156,11 @@ impl InputInjector for WindowsInputInjector {
         unsafe { GetCursorPos(&mut point) }.map_err(|e| InjectError::Synthesis(e.to_string()))?;
         Ok((point.x as f64, point.y as f64))
     }
+
+    fn screen_bounds(&self) -> Result<(f64, f64, f64, f64), InjectError> {
+        let b = screen::virtual_screen_bounds();
+        Ok((b.x as f64, b.y as f64, b.width as f64, b.height as f64))
+    }
 }
 
 /// Exposed for `ms-core-service`, which needs the local virtual-screen

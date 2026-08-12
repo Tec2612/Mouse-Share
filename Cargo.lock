@@ -497,6 +497,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ms-core-service"
+version = "0.1.0"
+dependencies = [
+ "ms-config",
+ "ms-discovery",
+ "ms-input-core",
+ "ms-protocol",
+ "ms-security",
+ "rustls",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "ms-discovery"
 version = "0.1.0"
 dependencies = [

@@ -24,8 +24,15 @@ pub trait InputInjector: Send {
     fn mouse_wheel(&mut self, delta_x: f64, delta_y: f64, high_resolution: bool) -> Result<(), InjectError>;
     fn key_event(&mut self, key: LogicalKey, pressed: bool, modifiers: Modifiers) -> Result<(), InjectError>;
 
-    /// Returns the current cursor position and the local virtual screen's
-    /// bounds, so the caller can detect the cursor reaching a configured
-    /// return edge after a burst of injected movement.
+    /// Returns the current cursor position in the local screen's
+    /// coordinate space, so the caller can detect the cursor reaching a
+    /// configured return edge after a burst of injected movement.
     fn cursor_position(&self) -> Result<(f64, f64), InjectError>;
+
+    /// Returns `(x, y, width, height)` of the local virtual screen (the
+    /// bounding box of all attached displays). `EdgeStateMachine` deals
+    /// only in edge-relative normalized 0.0..1.0 positions (see
+    /// `Action::WarpLocalCursor`); this is what lets the caller convert
+    /// that into the real pixel coordinates `warp_absolute` expects.
+    fn screen_bounds(&self) -> Result<(f64, f64, f64, f64), InjectError>;
 }
