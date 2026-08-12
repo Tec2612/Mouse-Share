@@ -10,6 +10,7 @@ members = [
     "crates/ms-input-windows",
     "crates/ms-input-macos",
     "crates/ms-core-service",
+    "crates/ms-daemon",
 ]
 
 [workspace.package]
