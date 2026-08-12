@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/ms-protocol",
+    "crates/ms-keymap",
 ]
 
 [workspace.package]
