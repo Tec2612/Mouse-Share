@@ -77,7 +77,18 @@ impl Default for MouseSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NetworkSettings {
+    /// Port for already-paired sessions (pinned mutual TLS) — owned by
+    /// the background daemon (`ms-daemon`).
     pub listen_port: u16,
+    /// Port for the trust-on-first-use pairing handshake — a distinct
+    /// port from `listen_port` because the two use different TLS
+    /// verifiers (TOFU-accept-any vs. pinned-only; see `docs/security.md`)
+    /// and, in the current build, different owning processes: the
+    /// desktop UI runs the pairing acceptor directly (since pairing is
+    /// inherently something the user is present and looking at the
+    /// screen for), while `listen_port` is reserved for the always-on
+    /// background daemon once it's wired to actually run continuously.
+    pub pairing_port: u16,
     pub auto_discovery_enabled: bool,
     /// Heartbeat interval; also drives dead-connection detection (a
     /// session is considered lost after `heartbeat_interval * 3` with no
@@ -87,7 +98,7 @@ pub struct NetworkSettings {
 
 impl Default for NetworkSettings {
     fn default() -> Self {
-        Self { listen_port: 45677, auto_discovery_enabled: true, heartbeat_interval_ms: 1000 }
+        Self { listen_port: 45677, pairing_port: 45678, auto_discovery_enabled: true, heartbeat_interval_ms: 1000 }
     }
 }
 

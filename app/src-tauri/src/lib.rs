@@ -1,4 +1,5 @@
 mod commands;
+mod pairing;
 mod permissions;
 mod state;
 
@@ -6,7 +7,7 @@ use ms_config::ConfigStore;
 use state::AppState;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,6 +17,23 @@ pub fn run() {
             let app_state = build_app_state(app.handle())?;
             app.manage(app_state);
             setup_tray(app.handle())?;
+            pairing::spawn_pairing_acceptor(app.handle().clone());
+
+            // Closing the window must not exit the app: the pairing
+            // acceptor (and, once wired, live sessions) need to keep
+            // running in the background exactly like the tray icon
+            // implies. Hide instead, and only actually quit via the
+            // tray's "Quit" item.
+            if let Some(window) = app.get_webview_window("main") {
+                let window_clone = window.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = window_clone.hide();
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -31,6 +49,8 @@ pub fn run() {
             commands::start_pairing,
             commands::confirm_pairing,
             commands::cancel_pairing,
+            commands::accept_incoming_pairing,
+            commands::decline_incoming_pairing,
             permissions::check_permissions,
             permissions::request_accessibility,
         ])
@@ -46,6 +66,7 @@ fn build_app_state(app: &tauri::AppHandle) -> anyhow::Result<AppState> {
     std::fs::create_dir_all(&config_dir)?;
 
     let config_store = ConfigStore::new(config_dir.join("config.toml"));
+    let config = config_store.load()?;
     let (device_id, device_name) = ms_daemon::identity::load_or_create_device_meta(&config_dir)?;
 
     let secure_storage: Box<dyn ms_config::SecureStorage> = {
@@ -62,6 +83,18 @@ fn build_app_state(app: &tauri::AppHandle) -> anyhow::Result<AppState> {
 
     let trust_store_path = ms_daemon::identity::trust_store_path(&config_dir);
 
+    let discovery = if config.settings.network.auto_discovery_enabled {
+        match start_advertising(device_id, &device_name, config.settings.network.pairing_port) {
+            Ok(service) => Some(service),
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to start mDNS advertising; this device won't appear in other devices' discovery lists (Connect by IP/Hostname still works)");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     Ok(AppState {
         config_store,
         trust_store_path,
@@ -69,7 +102,40 @@ fn build_app_state(app: &tauri::AppHandle) -> anyhow::Result<AppState> {
         device_id,
         device_name,
         pending_pairing: std::sync::Mutex::new(None),
+        incoming_pairing: std::sync::Mutex::new(None),
+        discovery: std::sync::Mutex::new(discovery),
     })
+}
+
+/// Advertises this device at `pairing_port` — see `NetworkSettings::pairing_port`'s
+/// doc comment for why that's the port used here rather than
+/// `listen_port`. The returned `DiscoveryService` must be kept alive
+/// (stored in `AppState::discovery`) for the advertisement to stay up.
+fn start_advertising(device_id: uuid::Uuid, device_name: &str, pairing_port: u16) -> anyhow::Result<ms_discovery::DiscoveryService> {
+    let mut discovery = ms_discovery::DiscoveryService::new()?;
+    let os = current_os();
+    let remote_os = match os {
+        ms_protocol::OperatingSystem::Windows => ms_discovery::RemoteOs::Windows,
+        ms_protocol::OperatingSystem::MacOs => ms_discovery::RemoteOs::MacOs,
+    };
+    let host_label = device_name.to_lowercase().replace(' ', "-");
+    discovery.advertise(device_id, device_name, remote_os, &host_label, pairing_port)?;
+    Ok(discovery)
+}
+
+fn current_os() -> ms_protocol::OperatingSystem {
+    #[cfg(target_os = "windows")]
+    {
+        ms_protocol::OperatingSystem::Windows
+    }
+    #[cfg(target_os = "macos")]
+    {
+        ms_protocol::OperatingSystem::MacOs
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        ms_protocol::OperatingSystem::Windows
+    }
 }
 
 /// Tray/menu-bar icon with "Open Dashboard", "Stop Sharing" (the same

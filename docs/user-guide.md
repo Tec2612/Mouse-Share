@@ -136,7 +136,8 @@ on screen.
 | Mouse sensitivity | 1.0× | Multiplier applied to inbound movement. |
 | Respect receiver acceleration | On | Leaves the receiving OS's own pointer-acceleration curve active on injected movement (closest to "feels local"); turn off if you notice the pointer feels inconsistent between machines. |
 | Natural scrolling | Off | |
-| Network port | 45677 | Change only if it conflicts with something else on your network. |
+| Pairing port | 45678 | Used only during the pairing handshake itself. If your firewall prompts when Mouse Share first starts, allow it — otherwise other computers can't pair with this one. Change only if it conflicts with something else on your network. |
+| Session port | 45677 | Reserved for shared-control traffic once a pairing is active. |
 | Emergency hotkey | Ctrl+Alt+Esc | |
 | Theme | System | Light/Dark/System. |
 | Language | Matches system | |

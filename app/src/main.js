@@ -96,7 +96,7 @@ async function beginPairing(host, port, name) {
 
 $("#manual-connect-btn").addEventListener("click", () => {
   const host = $("#manual-host").value.trim();
-  const port = Number($("#manual-port").value || 45677);
+  const port = Number($("#manual-port").value || 45678);
   const name = $("#manual-name").value.trim();
   if (!host) return;
   beginPairing(host, port, name);
@@ -115,6 +115,31 @@ $("#pairing-confirm-btn").addEventListener("click", async () => {
 $("#pairing-cancel-btn").addEventListener("click", async () => {
   await invoke("cancel_pairing");
   $("#pairing-card").hidden = true;
+});
+
+// Fires when another device dials into this one to pair (see
+// pairing::spawn_pairing_acceptor on the Rust side). Distinct from the
+// outgoing pairing-card above: both can be in flight at once.
+window.__TAURI__.event.listen("incoming-pairing", (event) => {
+  switchTab("setup");
+  $("#incoming-pairing-name").textContent = event.payload.remoteName;
+  $("#incoming-pairing-sas").textContent = event.payload.sas;
+  $("#incoming-pairing-card").hidden = false;
+});
+
+$("#incoming-pairing-accept-btn").addEventListener("click", async () => {
+  try {
+    await invoke("accept_incoming_pairing");
+    $("#incoming-pairing-card").hidden = true;
+    loadDashboard();
+  } catch (e) {
+    alert(`Could not accept pairing: ${e}`);
+  }
+});
+
+$("#incoming-pairing-decline-btn").addEventListener("click", async () => {
+  await invoke("decline_incoming_pairing");
+  $("#incoming-pairing-card").hidden = true;
 });
 
 async function loadLayoutSummary() {

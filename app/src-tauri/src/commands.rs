@@ -110,6 +110,7 @@ pub async fn discover_devices(duration_ms: u64) -> Result<Vec<DiscoveredDeviceVi
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PairingStarted {
     pub sas: String,
     pub remote_name: String,
@@ -188,6 +189,32 @@ pub fn confirm_pairing(state: State<AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn cancel_pairing(state: State<AppState>) {
     *state.pending_pairing.lock().expect("poisoned") = None;
+}
+
+/// Accepts a pairing that someone else dialed into us for (see
+/// `pairing::spawn_pairing_acceptor`, which populates
+/// `state.incoming_pairing` and emits the `incoming-pairing` event the
+/// frontend listens for before calling this).
+#[tauri::command]
+pub fn accept_incoming_pairing(state: State<AppState>) -> Result<(), String> {
+    let pending = state.incoming_pairing.lock().expect("poisoned").take().ok_or("no incoming pairing in progress")?;
+
+    let mut store = identity_trust_store(&state)?;
+    store.add(PairedDevice {
+        device_id: pending.remote_device_id,
+        name: pending.remote_name,
+        fingerprint: pending.remote_fingerprint,
+        paired_at_unix_ms: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0),
+    });
+    ms_daemon::identity::save_trust_store(&state.trust_store_path, &store).map_err(to_err)
+}
+
+#[tauri::command]
+pub fn decline_incoming_pairing(state: State<AppState>) {
+    *state.incoming_pairing.lock().expect("poisoned") = None;
 }
 
 fn identity_trust_store(state: &State<AppState>) -> Result<TrustStore, String> {
