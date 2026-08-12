@@ -29,15 +29,20 @@ mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 
 cp "$SCRIPT_DIR/Info.plist" "$BUNDLE/Contents/Info.plist"
 
-# The daemon binary always exists once cargo build succeeds; the UI binary
-# (built by Tauri, named after app/src-tauri's package name) is copied in
-# if present so this script also works before the UI is fully wired up —
-# producing a daemon-only bundle rather than failing.
+# The daemon binary always exists once cargo build succeeds. The UI binary
+# is built by Tauri into app/src-tauri's OWN target directory (that crate
+# is deliberately excluded from the root Cargo workspace — see
+# Cargo.toml's [workspace] exclude and docs/build-instructions.md), not
+# the shared $REPO_ROOT/target this daemon binary uses — pointing here at
+# $REPO_ROOT/target/release/mouse-share instead (an earlier bug) always
+# missed it and silently fell into the daemon-only fallback below,
+# producing an app bundle with no visible UI at all when opened.
+UI_BIN="$REPO_ROOT/app/src-tauri/target/release/mouse-share"
 cp "$REPO_ROOT/target/release/mouse-share-daemon" "$BUNDLE/Contents/MacOS/mouse-share-daemon"
-if [ -f "$REPO_ROOT/target/release/mouse-share" ]; then
-  cp "$REPO_ROOT/target/release/mouse-share" "$BUNDLE/Contents/MacOS/mouse-share"
+if [ -f "$UI_BIN" ]; then
+  cp "$UI_BIN" "$BUNDLE/Contents/MacOS/mouse-share"
 else
-  echo "warning: target/release/mouse-share (Tauri UI binary) not found; bundling the daemon binary as the main executable instead."
+  echo "warning: $UI_BIN not found; bundling the daemon binary as the main executable instead (this bundle will have no visible UI)."
   cp "$REPO_ROOT/target/release/mouse-share-daemon" "$BUNDLE/Contents/MacOS/mouse-share"
 fi
 chmod +x "$BUNDLE/Contents/MacOS/"*

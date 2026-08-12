@@ -5,7 +5,9 @@
 ;
 ; Expects the release binaries to already be built at:
 ;   target\release\mouse-share-daemon.exe
-;   target\release\mouse-share.exe          (the Tauri UI binary, once built)
+;   app\src-tauri\target\release\mouse-share.exe   (the Tauri UI binary —
+;     built into app/src-tauri's own target dir, since that crate is
+;     excluded from the root Cargo workspace; NOT target\release\)
 ;
 ; Run `cargo build --release --workspace` and `npm run tauri build` (from
 ; app/) before compiling this script locally; build.ps1 does both.
@@ -43,7 +45,15 @@ Name: "startupicon"; Description: "Start Mouse Share automatically when Windows 
 
 [Files]
 Source: "..\..\target\release\{#MyDaemonExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; The Tauri UI crate is deliberately excluded from the root Cargo
+; workspace (see Cargo.toml's [workspace] exclude and
+; docs/build-instructions.md), so it has its own target directory under
+; app\src-tauri rather than the shared root target\ the daemon builds
+; into above. Pointing here at target\release\ instead (an earlier bug)
+; silently produced an installer missing mouse-share.exe entirely, since
+; skipifsourcedoesntexist let a wrong path fail quietly instead of
+; erroring at build time.
+Source: "..\..\app\src-tauri\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
