@@ -4,6 +4,7 @@ members = [
     "crates/ms-protocol",
     "crates/ms-keymap",
     "crates/ms-security",
+    "crates/ms-discovery",
 ]
 
 [workspace.package]
