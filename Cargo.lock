@@ -458,6 +458,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ms-input-core"
+version = "0.1.0"
+dependencies = [
+ "ms-config",
+ "ms-protocol",
+ "thiserror",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "ms-keymap"
 version = "0.1.0"
 dependencies = [

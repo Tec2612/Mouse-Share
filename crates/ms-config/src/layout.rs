@@ -102,6 +102,11 @@ impl ScreenLayout {
         self.link_edges_asymmetric(from, from_edge, to, opposite_edge(from_edge), 0.0, 1.0)
     }
 
+    /// Links a shared boundary between two devices' edges. The link is
+    /// inherently bidirectional — crossing `from_edge` on `from` hands
+    /// control to `to` entering at `to_edge`, and crossing `to_edge` on
+    /// `to` hands control back, entering `from` at `from_edge` — matching
+    /// how a single physical monitor boundary works in both directions.
     pub fn link_edges_asymmetric(
         &mut self,
         from: uuid::Uuid,
@@ -126,13 +131,34 @@ impl ScreenLayout {
         if self.edges.iter().any(|e| e.from == from && e.from_edge == from_edge) {
             return Err(LayoutError::EdgeAlreadyLinked(from, from_edge));
         }
+        if self.edges.iter().any(|e| e.from == to && e.from_edge == to_edge) {
+            return Err(LayoutError::EdgeAlreadyLinked(to, to_edge));
+        }
 
         self.edges.push(EdgeLink { from, from_edge, to, to_edge, boundary_start, boundary_end });
+        self.edges.push(EdgeLink {
+            from: to,
+            from_edge: to_edge,
+            to: from,
+            to_edge: from_edge,
+            boundary_start,
+            boundary_end,
+        });
         Ok(())
     }
 
+    /// Removes the link at `from`'s `from_edge`, along with its reverse
+    /// counterpart on the other device.
     pub fn unlink_edge(&mut self, from: uuid::Uuid, from_edge: ScreenEdge) {
+        let reverse = self
+            .edges
+            .iter()
+            .find(|e| e.from == from && e.from_edge == from_edge)
+            .map(|e| (e.to, e.to_edge));
         self.edges.retain(|e| !(e.from == from && e.from_edge == from_edge));
+        if let Some((to, to_edge)) = reverse {
+            self.edges.retain(|e| !(e.from == to && e.from_edge == to_edge && e.to == from));
+        }
     }
 
     /// Resolves what crossing `edge` at normalized `position` (0.0..1.0
@@ -180,6 +206,36 @@ mod tests {
         let link = layout.resolve(a, ScreenEdge::Right, 0.5).unwrap();
         assert_eq!(link.to, b);
         assert_eq!(link.to_edge, ScreenEdge::Left);
+    }
+
+    #[test]
+    fn a_link_works_crossing_back_the_other_way_too() {
+        // A single configured boundary must return control the same way
+        // it was given: crossing b's Left edge back must resolve to a's
+        // Right, matching one physical monitor edge shared by both.
+        let (a, b) = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+        let mut layout = ScreenLayout::new();
+        layout.add_device(node(a, "Windows-PC"));
+        layout.add_device(node(b, "Mac"));
+        layout.link_edges(a, ScreenEdge::Right, b).unwrap();
+
+        let back = layout.resolve(b, ScreenEdge::Left, 0.5).unwrap();
+        assert_eq!(back.to, a);
+        assert_eq!(back.to_edge, ScreenEdge::Right);
+    }
+
+    #[test]
+    fn unlinking_an_edge_removes_the_reverse_link_too() {
+        let (a, b) = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+        let mut layout = ScreenLayout::new();
+        layout.add_device(node(a, "A"));
+        layout.add_device(node(b, "B"));
+        layout.link_edges(a, ScreenEdge::Right, b).unwrap();
+
+        layout.unlink_edge(a, ScreenEdge::Right);
+        assert!(layout.resolve(a, ScreenEdge::Right, 0.5).is_none());
+        assert!(layout.resolve(b, ScreenEdge::Left, 0.5).is_none());
+        assert_eq!(layout.edges().count(), 0);
     }
 
     #[test]

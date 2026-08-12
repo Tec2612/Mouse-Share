@@ -6,6 +6,7 @@ members = [
     "crates/ms-security",
     "crates/ms-discovery",
     "crates/ms-config",
+    "crates/ms-input-core",
 ]
 
 [workspace.package]
