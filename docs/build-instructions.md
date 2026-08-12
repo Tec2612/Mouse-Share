@@ -1,6 +1,26 @@
 # Build Instructions
 
-## Prerequisites
+## Easiest path: automated setup scripts
+
+If you don't already have Rust/Node/build tools installed, skip the
+manual prerequisite steps below and just run the bootstrap script for
+your platform from the repo root. It detects everything missing, installs
+it (Rust via rustup, Node via winget/Homebrew, the MSVC C++ build tools on
+Windows, Xcode Command Line Tools on macOS), then builds the daemon and
+the desktop app. It's safe to re-run if it fails partway — every step
+skips itself if already satisfied.
+
+**Windows:** double-click `scripts\setup-windows.bat` (or run
+`powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1`).
+
+**macOS:** double-click `scripts/setup-macos.command` in Finder (or run
+`bash scripts/setup-macos.sh`). Xcode Command Line Tools installation pops
+a system dialog partway through — click "Install" there when it appears
+and the script will wait for it to finish before continuing.
+
+When it finishes, it prints the path to the built installer/app bundle.
+
+## Prerequisites (manual setup)
 
 - Rust (stable channel; developed against 1.94) via [rustup](https://rustup.rs).
 - For the UI (`app/`): [Node.js](https://nodejs.org) 18+ and the [Tauri

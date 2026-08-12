@@ -52,7 +52,15 @@ installers/                      Windows (Inno Setup) and macOS packaging
 
 ## Building
 
-See [docs/build-instructions.md](docs/build-instructions.md). Quick start
+**Don't have Rust/Node/build tools installed?** Run the automated setup
+script for your platform from the repo root — it detects and installs
+everything needed, then builds the app:
+
+- **Windows:** double-click `scripts\setup-windows.bat`
+- **macOS:** double-click `scripts/setup-macos.command` in Finder
+
+See [docs/build-instructions.md](docs/build-instructions.md) for details
+and manual setup. Quick start
 for the cross-platform core (works on any OS, including this repo's CI):
 
 ```sh
