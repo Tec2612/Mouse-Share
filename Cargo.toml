@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ms-protocol",
+    "crates/ms-keymap",
+    "crates/ms-security",
+    "crates/ms-discovery",
+    "crates/ms-config",
+    "crates/ms-input-core",
+    "crates/ms-input-windows",
+    "crates/ms-input-macos",
+    "crates/ms-core-service",
+    "crates/ms-daemon",
+]
+exclude = [
+    # The Tauri UI backend has its own dependency graph (tauri, wry, tao)
+    # with platform-native UI toolkit requirements (webkit2gtk on Linux,
+    # WebView2 on Windows, WKWebView on macOS) that don't belong in the
+    # headless core's workspace — keeping it excluded means
+    # `cargo build/test --workspace` at the repo root always succeeds
+    # without needing a UI toolkit installed, on any host. Build/check it
+    # directly from app/src-tauri instead (see docs/build-instructions.md).
+    "app/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Mouse Share Contributors"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+bincode = "1.3"
+tokio = { version = "1", features = ["full"] }
+tokio-rustls = "0.26"
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+rustls-pemfile = "2"
+rcgen = "0.13"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+thiserror = "1"
+anyhow = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+mdns-sd = "0.13"
+keyring = "3"
+directories = "5"
+toml = "0.8"

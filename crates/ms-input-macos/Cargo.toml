@@ -1,0 +1,16 @@
+[package]
+name = "ms-input-macos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ms-input-core = { path = "../ms-input-core" }
+ms-keymap = { path = "../ms-keymap" }
+ms-protocol = { path = "../ms-protocol" }
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = { version = "0.25", features = ["highsierra"] }
+core-foundation = "0.10"
+libc = "0.2"
