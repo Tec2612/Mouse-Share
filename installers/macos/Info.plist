@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Mouse Share</string>
+	<key>CFBundleDisplayName</key>
+	<string>Mouse Share</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.mouseshare.app</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleExecutable</key>
+	<string>mouse-share</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon.icns</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<!-- Menu-bar-only app: no Dock icon, no menu bar of its own beyond the
+	     status item the app creates itself. -->
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<!-- Accessibility and Input Monitoring are TCC permissions the system
+	     prompts for automatically the first time the app calls the
+	     relevant API (see ms-input-macos::{accessibility_trusted,
+	     input_monitoring_status}); unlike camera/microphone, macOS does
+	     not require or display an NSUsageDescription string for either,
+	     so none is declared here. The onboarding flow in the app itself
+	     is what explains the request to the user before it happens. -->
+</dict>
+</plist>

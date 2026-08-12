@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test-linux:
+    name: Test (Linux, cross-platform core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo test --workspace
+        run: cargo test --workspace --verbose
+
+      - name: Install mingw-w64 (for the Windows cross-check build)
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+
+      - name: Cross-check ms-input-windows against the real Win32 API surface
+        run: cargo check -p ms-input-windows --target x86_64-pc-windows-gnu --verbose
+
+      - name: Cross-build ms-daemon for Windows (full link, mingw toolchain)
+        run: cargo build -p ms-daemon --target x86_64-pc-windows-gnu --verbose
+
+      - name: Cross-check ms-input-macos against the real CoreGraphics/CoreFoundation API surface
+        run: cargo check -p ms-input-macos --target x86_64-apple-darwin --verbose
+
+  test-windows:
+    name: Test (Windows, real hooks/SendInput)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test --workspace
+        run: cargo test --workspace --verbose
+      - name: cargo build --release
+        run: cargo build --release --workspace --verbose
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-daemon-debug
+          path: target/release/mouse-share-daemon.exe
+          retention-days: 14
+
+  test-macos:
+    name: Test (macOS, real CGEventTap/CGEventPost)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test --workspace
+        # Capture-path tests that require Accessibility access are skipped
+        # on a fresh CI runner (no way to interactively grant a TCC
+        # permission); everything else — including injection-only and all
+        # pure-logic tests across the whole workspace — runs for real.
+        run: cargo test --workspace --verbose -- --skip capture_
+      - name: cargo build --release
+        run: cargo build --release --workspace --verbose
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-daemon-debug
+          path: target/release/mouse-share-daemon
+          retention-days: 14
+
+  build-installers:
+    name: Build installers
+    needs: [test-windows, test-macos]
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            script: installers/windows/build.ps1
+          - os: macos-latest
+            script: installers/macos/build.sh
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build release binaries
+        run: cargo build --release --workspace
+
+      - name: Install UI dependencies and build the Tauri app
+        # Native webview toolkits (WebView2 on Windows, WKWebView on
+        # macOS) ship with the OS on both of these runners, unlike the
+        # Linux GTK/webkit2gtk stack this repo's own sandbox lacked during
+        # development — this is the real build/validation of app/, not a
+        # cross-check.
+        working-directory: app
+        run: |
+          npm ci
+          npm run tauri build -- --ci
+
+      - name: Build Windows installer
+        if: matrix.os == 'windows-latest'
+        run: pwsh installers/windows/build.ps1
+
+      - name: Build macOS package
+        if: matrix.os == 'macos-latest'
+        run: bash installers/macos/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.os }}
+          path: |
+            installers/windows/output/*.exe
+            installers/macos/output/*.dmg
+          retention-days: 30
+          if-no-files-found: ignore
