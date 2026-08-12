@@ -144,21 +144,56 @@ $("#incoming-pairing-decline-btn").addEventListener("click", async () => {
 
 async function loadLayoutSummary() {
   try {
-    const layout = await invoke("get_layout");
+    const [layout, myId, paired] = await Promise.all([
+      invoke("get_layout"),
+      invoke("get_this_device_id"),
+      invoke("list_paired_devices"),
+    ]);
     const edges = layout.edges ?? [];
-    const nodes = new Map((layout.nodes ?? []).map((n) => [n.device_id, n.display_name]));
+    // layout.nodes is a Rust HashMap<Uuid, ComputerNode>, which serializes
+    // to a JSON *object* keyed by device id, not an array.
+    const nodeNames = new Map(Object.values(layout.nodes ?? {}).map((n) => [n.device_id, n.display_name]));
     const el = $("#layout-summary");
-    if (edges.length === 0) {
-      el.textContent = "No edges configured yet. Pair a computer, then configure its position here.";
-      return;
+    const myEdges = edges.filter((e) => e.from === myId);
+    if (myEdges.length === 0) {
+      el.textContent = "No edges linked yet — use the form below.";
+    } else {
+      el.innerHTML = myEdges
+        .map((e) => {
+          const peerName = escapeHtml(nodeNames.get(e.to) ?? e.to);
+          return `My ${e.from_edge} edge ↔ ${peerName}'s ${e.to_edge} edge <button class="btn secondary unlink-btn" data-edge="${e.from_edge}" style="margin-left:8px">Unlink</button>`;
+        })
+        .join("<br>");
+      el.querySelectorAll(".unlink-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          await invoke("unlink_layout_edge", { myEdge: btn.dataset.edge });
+          loadLayoutSummary();
+        });
+      });
     }
-    el.innerHTML = edges
-      .map((e) => `${escapeHtml(nodes.get(e.from) ?? e.from)} (${e.from_edge}) → ${escapeHtml(nodes.get(e.to) ?? e.to)} (${e.to_edge})`)
-      .join("<br>");
+
+    const peerSelect = $("#link-peer-device");
+    peerSelect.innerHTML = paired.map((d) => `<option value="${escapeHtml(d.fingerprint)}" data-id="${escapeHtml(d.device_id)}">${escapeHtml(d.name)}</option>`).join("");
   } catch (e) {
     console.error("get_layout failed", e);
   }
 }
+
+$("#link-edge-btn").addEventListener("click", async () => {
+  const peerSelect = $("#link-peer-device");
+  const selected = peerSelect.selectedOptions[0];
+  if (!selected) {
+    alert("Pair a computer first.");
+    return;
+  }
+  const myEdge = $("#link-my-edge").value;
+  try {
+    await invoke("link_layout_edge", { peerDeviceId: selected.dataset.id, myEdge });
+    loadLayoutSummary();
+  } catch (e) {
+    alert(`Could not link edge: ${e}`);
+  }
+});
 
 async function loadSettings() {
   try {

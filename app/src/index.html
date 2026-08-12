@@ -90,8 +90,20 @@
 
         <div class="card">
           <h2>Screen Layout</h2>
-          <p class="muted">Arrange how your paired computers connect. (Drag-and-drop layout editor — canvas positions and edge links are persisted via <code>ScreenLayout</code>; this minimal build lists the current edge links as text pending the full drag-and-drop canvas.)</p>
+          <p class="muted">Arrange how your paired computers connect. (A drag-and-drop canvas isn't built yet — this links edges directly; positions are still persisted via <code>ScreenLayout</code> for when it is.)</p>
           <div id="layout-summary" class="muted">Loading…</div>
+          <div class="form-row" style="margin-top:12px">
+            <span class="muted">Moving my mouse off my</span>
+            <select id="link-my-edge">
+              <option value="Right">right edge</option>
+              <option value="Left">left edge</option>
+              <option value="Top">top edge</option>
+              <option value="Bottom">bottom edge</option>
+            </select>
+            <span class="muted">reaches</span>
+            <select id="link-peer-device"></select>
+            <button id="link-edge-btn" class="btn primary">Link</button>
+          </div>
         </div>
       </section>
 

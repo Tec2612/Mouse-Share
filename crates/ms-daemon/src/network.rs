@@ -30,6 +30,13 @@ impl ChannelNetworkSender {
     pub fn unregister(&self, device_id: DeviceId) {
         self.peers.lock().expect("poisoned").remove(&device_id);
     }
+
+    /// Whether a live session is currently registered for `device_id` —
+    /// used by the mesh-connect loop in `main.rs` to avoid dialing a peer
+    /// it (or the peer dialing us) already has an open connection to.
+    pub fn is_connected(&self, device_id: DeviceId) -> bool {
+        self.peers.lock().expect("poisoned").contains_key(&device_id)
+    }
 }
 
 impl NetworkSender for ChannelNetworkSender {
@@ -81,11 +88,8 @@ pub async fn run_listener(
 }
 
 /// Connects out to a peer at `addr` and runs the same session lifecycle as
-/// an accepted inbound connection. Used when this device initiates
-/// pairing/reconnection to a discovered or manually-entered peer; not yet
-/// invoked in this minimal daemon (no UI command dispatcher exists to
-/// trigger it yet), but is the complete real implementation for that path.
-#[allow(dead_code)]
+/// an accepted inbound connection. Used by `main.rs`'s mesh-connect loop
+/// to establish a live session with every paired device it can reach.
 pub async fn connect_out(
     addr: std::net::SocketAddr,
     tls_connector: tokio_rustls::TlsConnector,
