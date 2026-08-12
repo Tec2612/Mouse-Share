@@ -8,6 +8,7 @@ members = [
     "crates/ms-config",
     "crates/ms-input-core",
     "crates/ms-input-windows",
+    "crates/ms-input-macos",
 ]
 
 [workspace.package]
