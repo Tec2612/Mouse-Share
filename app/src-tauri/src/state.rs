@@ -22,5 +22,16 @@ pub struct AppState {
     pub device_identity: DeviceIdentity,
     pub device_id: uuid::Uuid,
     pub device_name: String,
+    /// A pairing we dialed out for (see `commands::start_pairing`).
     pub pending_pairing: Mutex<Option<PendingPairing>>,
+    /// A pairing someone else dialed into us for (see
+    /// `pairing::spawn_pairing_acceptor`). Kept separate from
+    /// `pending_pairing` since both can legitimately be in flight at once
+    /// (this device pairing out to one peer while a different peer pairs
+    /// in to it).
+    pub incoming_pairing: Mutex<Option<PendingPairing>>,
+    /// Kept alive for as long as the app runs so its mDNS advertisement
+    /// stays active — dropping it withdraws the advertisement. Never
+    /// otherwise touched after `lib.rs`'s setup starts it.
+    pub discovery: Mutex<Option<ms_discovery::DiscoveryService>>,
 }

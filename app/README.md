@@ -15,12 +15,25 @@ icon, and macOS Accessibility/Input Monitoring onboarding.
 - **Frontend (`src/`)**: plain HTML/CSS/JS (no framework/bundler — Tauri's
   `withGlobalTauri` config exposes `window.__TAURI__` directly), calling
   those commands.
-- **Not yet wired**: the tray's "Stop Sharing" action and the drag-and-drop
+- **Pairing** (`src-tauri/src/pairing.rs`): the app now runs both sides —
+  it dials out (`start_pairing`) *and* listens for incoming pairing
+  attempts on `NetworkSettings::pairing_port` (default 45678, distinct
+  from the session port 45677 — see that setting's doc comment), showing
+  an "Incoming pairing request" card with the same SAS-comparison flow.
+  It also advertises itself over mDNS at that port so discovered-device
+  pairing works, not just manual IP/hostname. Closing the main window
+  hides it rather than quitting, so the pairing acceptor (and the tray)
+  keep running in the background like a normal tray app.
+- **Not yet wired**: the tray's "Stop Sharing" action, the drag-and-drop
   screen-layout canvas (the layout data model and its persistence are
   complete in `ms-config`; only the visual canvas editor is still a text
-  summary — see `index.html`'s comment in the Screen Layout card). A
-  production build should also replace the placeholder solid-color icons
-  in `src-tauri/icons/` with real artwork.
+  summary — see `index.html`'s comment in the Screen Layout card), and
+  actually starting/relaying a *live* shared-control session after
+  pairing (that's `ms-daemon`'s `listen_port` listener, which today only
+  runs in the separate headless binary — nothing yet launches
+  `mouse-share-daemon` automatically alongside the UI). A production
+  build should also replace the placeholder solid-color icons in
+  `src-tauri/icons/` with real artwork.
 - **Build validation**: this repository's own sandbox has no system
   WebView toolkit available (Linux's webkit2gtk packages were unavailable
   from the configured package mirror during development — see

@@ -62,7 +62,7 @@
           <p class="muted">Use this if a computer doesn't appear automatically (common on networks with client isolation).</p>
           <div class="form-row">
             <input id="manual-host" type="text" placeholder="192.168.1.42 or bobs-mac.local" />
-            <input id="manual-port" type="number" placeholder="45677" value="45677" style="width:7rem" />
+            <input id="manual-port" type="number" placeholder="45678" value="45678" style="width:7rem" />
             <input id="manual-name" type="text" placeholder="Display name" />
             <button id="manual-connect-btn" class="btn primary">Pair</button>
           </div>
@@ -75,6 +75,16 @@
           <div class="form-row">
             <button id="pairing-confirm-btn" class="btn primary">Codes match — Confirm</button>
             <button id="pairing-cancel-btn" class="btn secondary">Cancel</button>
+          </div>
+        </div>
+
+        <div class="card" id="incoming-pairing-card" hidden>
+          <h2>Incoming pairing request</h2>
+          <p><strong id="incoming-pairing-name"></strong> wants to pair with this computer. Compare this code with the one shown on its screen. Only accept if they match exactly.</p>
+          <div class="sas-code" id="incoming-pairing-sas">------</div>
+          <div class="form-row">
+            <button id="incoming-pairing-accept-btn" class="btn primary">Codes match — Accept</button>
+            <button id="incoming-pairing-decline-btn" class="btn secondary">Decline</button>
           </div>
         </div>
 
