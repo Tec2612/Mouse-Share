@@ -30,9 +30,14 @@ pub enum Message {
     /// `EdgeEnter`.
     MouseMove { dx: f64, dy: f64, seq: u32 },
 
-    /// Absolute warp used exactly once when control enters a device, so the
-    /// cursor appears at the correct point along the shared edge rather
-    /// than wherever it last was on that screen.
+    /// Absolute warp, for a mid-session cursor re-sync. `x`/`y` are
+    /// normalized 0.0..1.0 within the *receiver's* screen (the sender
+    /// can't know the receiver's actual pixel dimensions) — the same
+    /// convention `EdgeEnter.position` uses. Not currently sent anywhere:
+    /// initial placement on hand-off is driven entirely by `EdgeEnter`'s
+    /// `position` field instead (see `ms-input-core`'s
+    /// `EdgeStateMachine::on_local_cursor_at_edge`); this variant exists
+    /// for a future mid-session re-sync need.
     MouseWarp { x: f64, y: f64 },
 
     MouseButton { button: MouseButton, pressed: bool },
