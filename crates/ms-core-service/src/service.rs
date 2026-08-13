@@ -94,7 +94,20 @@ impl CoreService {
     fn inject(&mut self, message: Message) {
         let _ = match message {
             Message::MouseMove { dx, dy, .. } => self.injector.move_relative(dx, dy),
-            Message::MouseWarp { x, y } => self.injector.warp_absolute(x, y),
+            // x/y are normalized 0.0..1.0 within the *receiver's* screen,
+            // same convention as Action::WarpLocalCursor above — a sender
+            // can't know the receiver's screen dimensions, so it couldn't
+            // send meaningful raw pixel coordinates here even if it tried.
+            // (Currently unreachable in practice: initial cursor placement
+            // on hand-off goes through EdgeEnter's position field instead,
+            // handled locally via WarpLocalCursor, so nothing constructs a
+            // MouseWarp message today — this exists for symmetry with the
+            // wire protocol's documented message set and any future sender
+            // that needs a mid-session re-sync.)
+            Message::MouseWarp { x, y } => match self.injector.screen_bounds() {
+                Ok((bx, by, bw, bh)) => self.injector.warp_absolute(bx + x * bw, by + y * bh),
+                Err(e) => Err(e),
+            },
             Message::MouseButton { button, pressed } => self.injector.mouse_button(button, pressed),
             Message::MouseWheel { delta_x, delta_y, high_resolution } => {
                 self.injector.mouse_wheel(delta_x, delta_y, high_resolution)
