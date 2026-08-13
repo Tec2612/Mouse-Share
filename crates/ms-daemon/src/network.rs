@@ -185,6 +185,9 @@ async fn run_session<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
             Ok(Some(Message::EdgeRelease)) => {
                 let _ = event_tx.send(CoreEvent::PeerEdgeRelease { from: peer_id });
             }
+            Ok(Some(Message::EdgeEnterRejected)) => {
+                let _ = event_tx.send(CoreEvent::PeerEdgeEnterRejected { from: peer_id });
+            }
             Ok(Some(msg @ (Message::MouseMove { .. }
             | Message::MouseWarp { .. }
             | Message::MouseButton { .. }

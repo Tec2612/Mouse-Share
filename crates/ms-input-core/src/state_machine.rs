@@ -38,6 +38,12 @@ pub enum Event {
     /// The peer we are controlling has released control back to us
     /// because its own cursor reached its configured return edge.
     PeerEdgeRelease { from: DeviceId },
+    /// The peer we just sent `EdgeEnter` to refused the hand-off because
+    /// it was already busy. Only actionable while `Controlling { target:
+    /// from }` — that's the one state this event can arrive in given how
+    /// it's produced, but a stale/duplicate delivery is ignored rather
+    /// than assumed impossible.
+    PeerEdgeEnterRejected { from: DeviceId },
     /// Any protocol message arriving from whichever device is currently
     /// relevant to our state (the one we're controlling, or the one
     /// controlling us) that should simply be injected/forwarded rather
@@ -92,6 +98,7 @@ impl EdgeStateMachine {
             }
             Event::PeerEdgeEnter { from, edge, position } => self.on_peer_edge_enter(from, edge, position),
             Event::PeerEdgeRelease { from } => self.on_peer_edge_release(from),
+            Event::PeerEdgeEnterRejected { from } => self.on_peer_edge_enter_rejected(from),
             Event::PeerInputMessage { from, message } => self.on_peer_input_message(from, message),
             Event::ConnectionLost { device } => self.on_connection_lost(device),
         }
@@ -158,13 +165,28 @@ impl EdgeStateMachine {
         if self.state != LocalState::Idle {
             // Already busy (already controlling someone, or already being
             // controlled by someone else); refuse the hand-off rather than
-            // silently overwrite state mid-session.
-            return vec![];
+            // silently overwrite state mid-session. Tell the sender so it
+            // doesn't stay stuck `Controlling` with local input disabled,
+            // waiting for a release that will never come — this is what
+            // happens if both sides cross their linked edge at nearly the
+            // same instant and each ends up refusing the other's
+            // `EdgeEnter` here.
+            return vec![Action::SendMessage { to: from, message: Message::EdgeEnterRejected }];
         }
         self.state = LocalState::BeingControlled { source: from };
         vec![
             Action::WarpLocalCursor { x: edge_entry_x(edge, position), y: edge_entry_y(edge, position) },
         ]
+    }
+
+    fn on_peer_edge_enter_rejected(&mut self, from: DeviceId) -> Vec<Action> {
+        match self.state {
+            LocalState::Controlling { target } if target == from => {
+                self.state = LocalState::Idle;
+                vec![Action::EnableLocalPassThrough]
+            }
+            _ => vec![], // stale/unexpected rejection; ignore
+        }
     }
 
     fn on_peer_edge_release(&mut self, from: DeviceId) -> Vec<Action> {
@@ -443,8 +465,54 @@ mod tests {
         let mut sm = EdgeStateMachine::new(me, no_hotkey());
         sm.handle(Event::PeerEdgeEnter { from: controller, edge: ScreenEdge::Left, position: 0.5 }, &layout);
 
-        sm.handle(Event::PeerEdgeEnter { from: second, edge: ScreenEdge::Right, position: 0.5 }, &layout);
+        let actions = sm.handle(Event::PeerEdgeEnter { from: second, edge: ScreenEdge::Right, position: 0.5 }, &layout);
 
         assert_eq!(sm.state(), LocalState::BeingControlled { source: controller }, "the original controller must not be silently displaced");
+        assert_eq!(
+            actions,
+            vec![Action::SendMessage { to: second, message: Message::EdgeEnterRejected }],
+            "the refused peer must be told, or it's stuck Controlling with its own input disabled forever"
+        );
+    }
+
+    #[test]
+    fn simultaneous_edge_crossings_reject_each_other_and_both_recover_to_idle() {
+        // Both devices' physical cursors cross their shared linked edge at
+        // nearly the same instant: each independently goes Idle ->
+        // Controlling (disabling local pass-through) and sends EdgeEnter to
+        // the other *before* either has received the other's EdgeEnter.
+        // When those EdgeEnters do arrive, both sides are already busy and
+        // each refuses the other's hand-off. Without EdgeEnterRejected
+        // wiring back into a recovery transition, this is a real deadlock:
+        // both machines end up Controlling forever with local input
+        // disabled and no local mouse ever entering BeingControlled to
+        // receive the forwarded input either place — matching the reported
+        // "both mice disappear, only Ctrl+Alt+Del recovers" symptom.
+        let (a, b) = (DeviceId::new_v4(), DeviceId::new_v4());
+        let layout = linked_layout(a, b);
+        let mut sm_a = EdgeStateMachine::new(a, no_hotkey());
+        let mut sm_b = EdgeStateMachine::new(b, no_hotkey());
+
+        sm_a.handle(Event::LocalCursorAtEdge { edge: ScreenEdge::Right, position: 0.5 }, &layout);
+        sm_b.handle(Event::LocalCursorAtEdge { edge: ScreenEdge::Left, position: 0.5 }, &layout);
+        assert_eq!(sm_a.state(), LocalState::Controlling { target: b });
+        assert_eq!(sm_b.state(), LocalState::Controlling { target: a });
+
+        // Each side's EdgeEnter now arrives at the other, which is already
+        // Controlling and refuses it.
+        let rejected_by_b = sm_b.handle(Event::PeerEdgeEnter { from: a, edge: ScreenEdge::Left, position: 0.5 }, &layout);
+        let rejected_by_a = sm_a.handle(Event::PeerEdgeEnter { from: b, edge: ScreenEdge::Right, position: 0.5 }, &layout);
+        assert_eq!(rejected_by_b, vec![Action::SendMessage { to: a, message: Message::EdgeEnterRejected }]);
+        assert_eq!(rejected_by_a, vec![Action::SendMessage { to: b, message: Message::EdgeEnterRejected }]);
+
+        // Each rejection reaches the side that's still Controlling and
+        // waiting; both must recover to Idle with pass-through restored.
+        let recovery_a = sm_a.handle(Event::PeerEdgeEnterRejected { from: b }, &layout);
+        let recovery_b = sm_b.handle(Event::PeerEdgeEnterRejected { from: a }, &layout);
+
+        assert_eq!(sm_a.state(), LocalState::Idle);
+        assert_eq!(sm_b.state(), LocalState::Idle);
+        assert_eq!(recovery_a, vec![Action::EnableLocalPassThrough]);
+        assert_eq!(recovery_b, vec![Action::EnableLocalPassThrough]);
     }
 }

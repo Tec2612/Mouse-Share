@@ -75,6 +75,14 @@ pub enum Message {
     /// Sent when control returns to the sender (mouse reached the
     /// configured return edge on the receiving device).
     EdgeRelease,
+    /// Sent back to an `EdgeEnter` sender when the receiver can't accept
+    /// the hand-off because it is already controlling or being controlled
+    /// by someone else. Lets the sender recover instead of being stuck
+    /// `Controlling` forever waiting for a hand-off the peer silently
+    /// dropped — this is what breaks the race where both sides cross
+    /// their linked edge at nearly the same instant and each refuses the
+    /// other's `EdgeEnter` because it's already busy handling its own.
+    EdgeEnterRejected,
 
     ClipboardOffer { formats: Vec<ClipboardFormat> },
     ClipboardRequest { format: ClipboardFormat },
